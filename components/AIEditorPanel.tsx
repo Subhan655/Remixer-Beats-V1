@@ -229,7 +229,7 @@ export const AIEditorPanel: React.FC<AIEditorPanelProps> = ({
                            
                            {/* AI Actions */}
                            {msg.role === 'model' && (
-                               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 hover:opacity-100 transition-opacity px-1">
+                               <div className="flex items-center gap-1 px-1">
                                    <button onClick={() => navigator.clipboard.writeText(msg.text)} className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white" title="Copy"><Copy size={12} /></button>
                                    <button onClick={() => handleInsert(msg.text)} className="p-1 hover:bg-white/10 rounded text-gray-500 hover:text-white flex items-center gap-1" title="Insert at cursor"><ArrowDownToLine size={12} /></button>
                                    {selectedContext && (
