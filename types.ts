@@ -92,10 +92,20 @@ export interface ChatSession {
   lastUpdated: number;
 }
 
+export interface ScriptVariant {
+  id: string;
+  content: string;
+  blocks: ScriptBlock[];
+  isOriginal: boolean;
+  createdAt: number;
+}
+
 export interface ProjectState {
   textContent: string; // Deprecated
   scriptBlocks: ScriptBlock[];
-  videoTranscript: string; 
+  scriptVariants: ScriptVariant[];
+  selectedVariantId?: string;
+  videoTranscript: string;
   audioClips: AudioClip[];
   selectedAudioIds: string[];
   aRollVideoUrl?: string;

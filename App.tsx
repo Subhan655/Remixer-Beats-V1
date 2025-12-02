@@ -1,24 +1,26 @@
 
 import React, { useState, useRef, useEffect } from 'react';
-import { Mic, FileAudio, Video, Layers, Wand2, AlertCircle, Upload, FileText, Trash2, CheckCircle, Download, Loader2, Music, Settings, Play, MessageSquare, Sparkles, Sun, Moon, Merge } from 'lucide-react';
-import { ProjectState, AudioClip, Beat, LayoutMode, OverlayType, StyleSettings, ScriptBlock, VideoComment, ChatSession } from './types';
+import { AlertCircle, Download, Loader2, Music, MessageSquare, Sun, Moon } from 'lucide-react';
+import { ProjectState, AudioClip, Beat, LayoutMode, OverlayType, StyleSettings, ScriptBlock, VideoComment, ChatSession, ScriptVariant } from './types';
 import { generateSpeech, analyzeBeats, generateBRollImage, generateVeoVideo, analyzeAudioContent, VeoConfig } from './services/geminiService';
 import { extractAudioFromVideo, mergeAudioClips } from './utils/audioUtils';
 import { renderVideoToBlob } from './utils/renderUtils';
-import { AudioPlayer } from './components/AudioPlayer';
-import { VideoComposer } from './components/VideoComposer';
-import { Timeline } from './components/Timeline';
 import { CollaborationPanel } from './components/CollaborationPanel';
 import { ScriptEditor, ScriptEditorRef } from './components/ScriptEditor';
 import { ThemeTransition } from './components/ThemeTransition';
-import { GenerateVideoModal } from './components/GenerateVideoModal';
-import { AIEditorPanel } from './components/AIEditorPanel';
+import { TabNavigation, TabType } from './components/TabNavigation';
+import { TextEditorTab } from './components/TextEditorTab';
+import { RemixTab } from './components/RemixTab';
+import { AudioTab } from './components/AudioTab';
+import { VideoEditorTab } from './components/VideoEditorTab';
 
 const INITIAL_TEXT = "Is code more important or is content more important for a 17 year old? I'm of the belief that if you can do it, learn how to code. Because see, content, you can always pick up even after you learn how to code.";
 
 const INITIAL_STATE: ProjectState = {
   textContent: INITIAL_TEXT,
   scriptBlocks: [{ id: 'block-init', content: INITIAL_TEXT, align: 'left', type: 'p' }],
+  scriptVariants: [],
+  selectedVariantId: undefined,
   videoTranscript: "",
   audioClips: [],
   selectedAudioIds: [],
@@ -52,7 +54,9 @@ export const App: React.FC = () => {
   const [exportProgress, setExportProgress] = useState(0);
   const [isCollabOpen, setIsCollabOpen] = useState(false);
   const [isGenerateModalOpen, setIsGenerateModalOpen] = useState(false);
-  
+  const [isRemixing, setIsRemixing] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabType>(TabType.TEXT_EDITOR);
+
   // AI Panel State (Collapsed by default)
   const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
 
@@ -258,6 +262,58 @@ export const App: React.FC = () => {
       scriptEditorRef.current?.replaceSelection(text);
   };
 
+  // --- Remix Script Handler ---
+  const handleRemixScript = async () => {
+      if (state.scriptBlocks.length === 0) return;
+
+      setIsRemixing(true);
+      setStatus("Generating script variations...");
+      setError(null);
+
+      try {
+          const fullText = getFullScriptText();
+
+          const originalVariant: ScriptVariant = {
+              id: `variant-original-${Date.now()}`,
+              content: fullText,
+              blocks: state.scriptBlocks,
+              isOriginal: true,
+              createdAt: Date.now()
+          };
+
+          const variants: ScriptVariant[] = [originalVariant];
+
+          for (let i = 0; i < 2; i++) {
+              const remixId = `variant-remix-${Date.now()}-${i}`;
+              const remixVariant: ScriptVariant = {
+                  id: remixId,
+                  content: fullText + ` [AI Variation ${i + 1}]`,
+                  blocks: [{
+                      id: remixId,
+                      content: fullText + ` [AI Variation ${i + 1}]`,
+                      align: 'left' as const,
+                      type: 'p' as const
+                  }],
+                  isOriginal: false,
+                  createdAt: Date.now()
+              };
+              variants.push(remixVariant);
+          }
+
+          setState(prev => ({
+              ...prev,
+              scriptVariants: variants,
+              selectedVariantId: originalVariant.id
+          }));
+
+          setStatus("Script variations generated!");
+          setActiveTab(TabType.REMIX);
+      } catch (e: any) {
+          setError("Failed to generate script variations: " + e.message);
+      } finally {
+          setIsRemixing(false);
+      }
+  };
 
   // --- Export Handler ---
   const handleExportVideo = async () => {
@@ -841,222 +897,117 @@ export const App: React.FC = () => {
           </div>
       </header>
 
-      {/* MAIN LAYOUT: Flexbox Implementation with Collapsible Panels */}
-      <main className="flex-1 min-h-0 flex overflow-hidden">
-          
-          {/* COLUMN 1: ASSETS & TOOLS (Fixed Width) */}
-          <aside className="w-[280px] shrink-0 h-full flex flex-col border-r border-border bg-background/50 backdrop-blur-sm">
-              <div className="p-4 border-b border-border flex items-center justify-between bg-surface/10">
-                  <h2 className="text-xs font-bold text-text-muted uppercase tracking-widest flex items-center gap-2">
-                    <Layers size={14} /> Assets
-                  </h2>
-              </div>
-              
-              <div className="flex-1 overflow-y-auto custom-scrollbar p-3 flex flex-col gap-6">
-                  
-                  {/* Script / Text */}
-                  <div className="flex flex-col gap-2 h-[450px] shrink-0">
-                      <div className="flex items-center justify-between">
-                          <label className="text-xs font-medium text-text-main flex items-center gap-2">
-                             <FileText size={14} className="text-primary" /> Script
-                          </label>
-                      </div>
-                      
-                      <ScriptEditor 
-                          ref={scriptEditorRef}
-                          blocks={state.scriptBlocks}
-                          onChange={handleScriptChange}
-                          onGenerateSpeech={handleGenerateSpeech}
-                          isGeneratingTTS={isGeneratingTTS}
-                          onSelectionChange={setSelectedScriptText}
-                      />
-                  </div>
+      {/* TAB NAVIGATION */}
+      <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
 
-                  {/* Audio Assets */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                      <div className="flex items-center justify-between">
-                         <label className="text-xs font-medium text-text-main flex items-center gap-2">
-                             <FileAudio size={14} className="text-emerald-400" /> Audio
-                         </label>
-                         {state.selectedAudioIds.length >= 2 && (
-                             <button 
-                                onClick={handleMergeAudio}
-                                className="flex items-center gap-1 px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/20 rounded text-[9px] uppercase font-bold transition animate-fade-in"
-                             >
-                                 <Merge size={10} /> Merge
-                             </button>
-                         )}
-                      </div>
-                      <div className="min-h-[80px] max-h-[150px] overflow-y-auto custom-scrollbar rounded-xl border border-border bg-background/50 p-1">
-                          {state.audioClips.length === 0 ? (
-                              <div className="h-full flex flex-col items-center justify-center text-text-muted gap-1 p-4">
-                                  <div className="w-8 h-8 rounded-full bg-surface flex items-center justify-center"><Mic size={14} /></div>
-                                  <span className="text-[10px]">No audio generated</span>
-                              </div>
-                          ) : (
-                              state.audioClips.map(clip => (
-                                  <div key={clip.id} className="relative group/audio">
-                                      <div onClick={() => handleAudioSelect(clip.id)} className={`absolute left-0 top-0 bottom-2 w-1 rounded-l-xl z-10 cursor-pointer transition-colors ${state.selectedAudioIds.includes(clip.id) ? 'bg-emerald-500' : 'bg-transparent hover:bg-emerald-500/30'}`} />
-                                      <div className={`${state.selectedAudioIds.includes(clip.id) ? 'bg-emerald-500/5' : ''}`}>
-                                          <AudioPlayer 
-                                            src={clip.audioUrl} 
-                                            label={clip.text} 
-                                            onDelete={() => handleDeleteAudio(clip.id)}
-                                          />
-                                      </div>
-                                  </div>
-                              ))
-                          )}
-                      </div>
-                  </div>
-
-                  {/* A-Roll Source */}
-                  <div className="flex flex-col gap-2 shrink-0">
-                      <label className="text-xs font-medium text-text-main flex items-center gap-2">
-                          <Video size={14} className="text-purple-400" /> A-Roll
-                      </label>
-                      
-                      {state.aRollVideoUrl ? (
-                          <div className="glass-card rounded-xl p-3 flex flex-col gap-3">
-                              <div className="flex items-center gap-2 text-xs text-emerald-400 bg-emerald-500/5 px-2 py-1.5 rounded-lg border border-emerald-500/10">
-                                  <CheckCircle size={12} /> Source Active
-                              </div>
-                              <div className="flex gap-2">
-                                  <label className="flex-1 py-1.5 glass-button rounded-lg text-[10px] font-medium flex items-center justify-center gap-1.5 cursor-pointer text-text-muted hover:text-text-main">
-                                      <Upload size={12} /> Replace
-                                      <input type="file" accept="video/*" onChange={handleUploadARoll} className="hidden" />
-                                  </label>
-                                  <button onClick={handleRemoveARoll} className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-300 border border-red-500/10 rounded-lg text-[10px] transition">
-                                      <Trash2 size={12} />
-                                  </button>
-                              </div>
-                          </div>
-                      ) : (
-                          <div className={`grid ${state.audioClips.length > 0 ? 'grid-cols-2' : 'grid-cols-1'} gap-2`}>
-                              {state.audioClips.length > 0 && (
-                                <button 
-                                    onClick={() => setIsGenerateModalOpen(true)}
-                                    disabled={state.isGeneratingVideo || state.scriptBlocks.length === 0}
-                                    className="h-16 rounded-xl bg-gradient-to-br from-purple-900/40 to-indigo-900/40 border border-purple-500/20 flex flex-col items-center justify-center gap-1 text-purple-200 hover:text-white hover:border-purple-500/40 hover:from-purple-900/60 hover:to-indigo-900/60 transition group disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <Wand2 size={16} className={`mb-0.5 ${state.isGeneratingVideo ? 'animate-spin' : 'group-hover:scale-110 transition'}`} />
-                                    <span className="text-[9px] font-bold uppercase tracking-wide">Generate</span>
-                                </button>
-                              )}
-
-                              <label className="h-16 rounded-xl bg-surface/50 border border-border flex flex-col items-center justify-center gap-1 text-text-muted hover:text-text-main hover:bg-surface hover:border-primary/20 transition cursor-pointer group">
-                                  <Upload size={16} className="mb-0.5 group-hover:-translate-y-0.5 transition" />
-                                  <span className="text-[9px] font-bold uppercase tracking-wide">Upload</span>
-                                  <input type="file" accept="video/*" onChange={handleUploadARoll} className="hidden" />
-                              </label>
-                          </div>
-                      )}
-                  </div>
-              </div>
-          </aside>
-
-          {/* MIDDLE AREA: PREVIEW & SEQUENCER (Flex) */}
-          <div className="flex-1 flex min-w-0">
-             
-             {/* COLUMN 2: PREVIEW (Fluid Width) */}
-             <main className="flex-1 h-full relative flex flex-col bg-background/80 min-w-[300px]">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-primary/5 via-transparent to-transparent pointer-events-none" />
-                
-                {/* Preview Header */}
-                <div className="h-12 border-b border-border flex items-center justify-between px-4 z-10 shrink-0">
-                    <div className="flex items-center gap-2 text-xs font-medium text-text-muted">
-                        <div className="w-1.5 h-1.5 rounded-full bg-red-500 shadow-[0_0_8px_rgba(239,68,68,0.6)]"></div>
-                        REC VIEW
-                    </div>
-                    <div className="flex bg-surface rounded-lg p-0.5 border border-border">
-                          <button 
-                              onClick={() => setState(prev => ({ ...prev, layoutMode: LayoutMode.PORTRAIT }))}
-                              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${state.layoutMode === LayoutMode.PORTRAIT ? 'bg-text-main text-background shadow-sm' : 'text-text-muted hover:text-text-main'}`}
-                          >
-                              9:16
-                          </button>
-                          <button 
-                              onClick={() => setState(prev => ({ ...prev, layoutMode: LayoutMode.LANDSCAPE }))}
-                              className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${state.layoutMode === LayoutMode.LANDSCAPE ? 'bg-text-main text-background shadow-sm' : 'text-text-muted hover:text-text-main'}`}
-                          >
-                              16:9
-                          </button>
-                    </div>
-                </div>
-
-                {/* Video Container */}
-                <div className="flex-1 flex items-center justify-center p-4 min-h-0 overflow-hidden relative">
-                    {state.aRollVideoUrl ? (
-                        <VideoComposer 
-                            ref={videoRef}
-                            aRollUrl={state.aRollVideoUrl}
-                            beats={state.beats}
-                            layoutMode={state.layoutMode}
-                            currentTime={currentTime}
-                            duration={duration}
-                            isPlaying={isPlaying}
-                            videoComments={state.videoComments}
-                            onTogglePlay={handleTogglePlay}
-                            onTimeUpdate={handleVideoTimeUpdate}
-                            onDurationChange={handleVideoDurationChange}
-                            onEnded={handleVideoEnded}
-                            onSeek={handleSeek}
-                            onScrubStart={handleScrubStart}
-                            onScrubEnd={handleScrubEnd}
-                            onAddComment={handleAddVideoComment}
-                            onDeleteComment={handleDeleteVideoComment}
-                            onReplyComment={handleReplyVideoComment}
-                            onResolveComment={handleResolveVideoComment}
-                        />
-                    ) : (
-                        <div className="aspect-[9/16] h-[60vh] bg-surface/50 flex flex-col items-center justify-center text-text-muted gap-4 border border-border rounded-lg shadow-2xl">
-                          <div className="w-20 h-20 rounded-full border border-border bg-surface flex items-center justify-center animate-pulse-slow">
-                              <Video size={32} className="opacity-20" />
-                          </div>
-                          <p className="text-xs font-medium tracking-wide">NO SIGNAL</p>
-                        </div>
-                    )}
-                </div>
-             </main>
-
-             {/* COLUMN 3: SEQUENCER (Fixed Width - Reduced size) */}
-             <aside className="w-[320px] shrink-0 h-full border-l border-border bg-background/50 backdrop-blur-md flex flex-col">
-                <Timeline 
-                    beats={state.beats}
-                    currentTime={currentTime}
-                    onSeek={handleSeek}
-                    onUpdateBeat={updateBeat}
-                    onRegenerateImage={handleRegenerateImage}
-                    onUploadImage={handleUploadImage}
-                    onSplitBeat={handleSplitBeat}
-                    onMergeBeats={handleMergeBeats}
-                    onGenerateImage={handleGenerateImageFromPrompt}
-                    onSelectImage={handleSelectImage}
-                    styleSettings={state.styleSettings}
-                    onUpdateStyleSettings={updateStyleSettings}
-                    onBulkGenerate={handleBulkGenerate}
-                    isAnalyzing={isAnalyzing}
-                />
-             </aside>
-          </div>
-
-          {/* COLUMN 4: AI EDITOR (Collapsible) */}
-          <aside className={`${isAiPanelOpen ? 'w-[360px]' : 'w-[50px]'} shrink-0 h-full border-l border-border bg-[#09090b] transition-[width] duration-300 ease-in-out`}>
-              <AIEditorPanel 
-                  sessions={state.chatSessions}
-                  currentSessionId={state.currentChatSessionId}
+      {/* MAIN LAYOUT: Tab Content Area */}
+      <main className="flex-1 min-h-0 overflow-hidden">
+          {/* TEXT EDITOR TAB */}
+          {activeTab === TabType.TEXT_EDITOR && (
+              <TextEditorTab
+                  scriptBlocks={state.scriptBlocks}
+                  onScriptChange={handleScriptChange}
+                  isGeneratingTTS={isGeneratingTTS}
+                  onGenerateSpeech={handleGenerateSpeech}
+                  onRemixScript={handleRemixScript}
+                  isRemixing={isRemixing}
+                  chatSessions={state.chatSessions}
+                  currentChatSessionId={state.currentChatSessionId}
+                  selectedContext={selectedScriptText}
+                  scriptEditorRef={scriptEditorRef}
                   onNewSession={handleNewSession}
                   onSwitchSession={handleSwitchSession}
                   onUpdateSession={handleUpdateSession}
                   onDeleteSession={handleDeleteSession}
-                  selectedContext={selectedScriptText}
-                  onInsert={handleAIInsert}
-                  onReplace={handleAIReplace}
-                  isCollapsed={!isAiPanelOpen}
-                  onToggle={() => setIsAiPanelOpen(!isAiPanelOpen)}
+                  onAIInsert={handleAIInsert}
+                  onAIReplace={handleAIReplace}
+                  isAiPanelOpen={isAiPanelOpen}
+                  onToggleAiPanel={() => setIsAiPanelOpen(!isAiPanelOpen)}
               />
-          </aside>
+          )}
 
+          {/* REMIX TAB */}
+          {activeTab === TabType.REMIX && (
+              <RemixTab
+                  variants={state.scriptVariants}
+                  selectedVariantId={state.selectedVariantId}
+                  onSelectVariant={(id) => setState(prev => ({ ...prev, selectedVariantId: id }))}
+                  onEditVariant={(id) => {
+                      const variant = state.scriptVariants.find(v => v.id === id);
+                      if (variant) {
+                          setState(prev => ({ ...prev, scriptBlocks: variant.blocks }));
+                          setActiveTab(TabType.TEXT_EDITOR);
+                      }
+                  }}
+                  onRegenerateVariant={(id) => {
+                      setStatus("Regenerating variant...");
+                  }}
+                  onDeleteVariant={(id) => {
+                      setState(prev => ({
+                          ...prev,
+                          scriptVariants: prev.scriptVariants.filter(v => v.id !== id)
+                      }));
+                  }}
+              />
+          )}
+
+          {/* AUDIO TAB */}
+          {activeTab === TabType.AUDIO && (
+              <AudioTab
+                  audioClips={state.audioClips}
+                  selectedAudioIds={state.selectedAudioIds}
+                  onAudioSelect={handleAudioSelect}
+                  onDeleteAudio={handleDeleteAudio}
+                  onMergeAudio={handleMergeAudio}
+                  aRollVideoUrl={state.aRollVideoUrl}
+                  isGeneratingVideo={state.isGeneratingVideo}
+                  isAnalyzing={isAnalyzing}
+                  onUploadARoll={handleUploadARoll}
+                  onRemoveARoll={handleRemoveARoll}
+                  onGenerateVideo={handleGenerateVeo}
+                  onGenerateVideoModalOpen={() => setIsGenerateModalOpen(true)}
+                  isGenerateModalOpen={isGenerateModalOpen}
+                  onGenerateModalClose={() => setIsGenerateModalOpen(false)}
+              />
+          )}
+
+          {/* VIDEO EDITOR TAB */}
+          {activeTab === TabType.VIDEO && (
+              <VideoEditorTab
+                  ref={videoRef}
+                  aRollVideoUrl={state.aRollVideoUrl}
+                  beats={state.beats}
+                  layoutMode={state.layoutMode}
+                  currentTime={currentTime}
+                  duration={duration}
+                  isPlaying={isPlaying}
+                  videoComments={state.videoComments}
+                  videoRef={videoRef}
+                  styleSettings={state.styleSettings}
+                  isAnalyzing={isAnalyzing}
+                  onTogglePlay={handleTogglePlay}
+                  onTimeUpdate={handleVideoTimeUpdate}
+                  onDurationChange={handleVideoDurationChange}
+                  onEnded={handleVideoEnded}
+                  onSeek={handleSeek}
+                  onScrubStart={handleScrubStart}
+                  onScrubEnd={handleScrubEnd}
+                  onAddComment={handleAddVideoComment}
+                  onDeleteComment={handleDeleteVideoComment}
+                  onReplyComment={handleReplyVideoComment}
+                  onResolveComment={handleResolveVideoComment}
+                  onLayoutChange={(layout) => setState(prev => ({ ...prev, layoutMode: layout }))}
+                  onUpdateBeat={updateBeat}
+                  onRegenerateImage={handleRegenerateImage}
+                  onUploadImage={handleUploadImage}
+                  onSplitBeat={handleSplitBeat}
+                  onMergeBeats={handleMergeBeats}
+                  onGenerateImage={handleGenerateImageFromPrompt}
+                  onSelectImage={handleSelectImage}
+                  onUpdateStyleSettings={updateStyleSettings}
+                  onBulkGenerate={handleBulkGenerate}
+              />
+          )}
       </main>
     </div>
   );
